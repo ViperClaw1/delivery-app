@@ -158,7 +158,6 @@ const itemUpdateCounterInCart = function (id, type) {
         }
       });
 
-      debugger;
       cart.querySelector('[data-productid="' + id + '"').style.display = "none";
       delete state.cart[itemIndex];
       if (state.cart.length < 2) {

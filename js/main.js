@@ -1,25 +1,158 @@
-const itemsUrl = "./json/db.json";
+const ITEMS_URL = "http://localhost:3000/json/db.json";
+const DELIVERY_MINIMAL_FREE = 600;
 
-function getItems(url) {
-  return fetch(url).then((answer) => answer.json());
+// Fetch items from the server
+async function fetchItems(url) {
+  const response = await fetch(url);
+  return response.json();
 }
 
-function getItemsFromCart() {
-  return JSON.parse(localStorage.getItem("cart"));
+// Retrieve items from the cart in localStorage
+function getCartItems() {
+  return JSON.parse(localStorage.getItem("cart")) || [];
 }
 
-async function main() {
-  const items = await getItems(itemsUrl);
-  const itemsFromCart = await getItemsFromCart();
+// Render a product item in the products container
+function renderProductItem(item, container) {
+  const markup = `
+    <div class="col-md-6">
+      <div class="card mb-4" data-productid="${item.id}">
+        <img class="product-img" src="img/roll/${item.img}" alt="${item.title}">
+        <div class="card-body text-center">
+          <h4 class="item-title">${item.title}</h4>
+          <p><small class="text-muted">${item.itemsInBox} шт.</small></p>
+          <div class="details-wrapper">
+            <div class="items">
+              <div class="items__control" data-click="minus">-</div>
+              <div class="items__current" data-count>${item.counter}</div>
+              <div class="items__control" data-click="plus">+</div>
+            </div>
+            <div class="price">
+              <div class="price__weight">${item.weight}г.</div>
+              <div class="price__currency">${item.price} ₽</div>
+            </div>
+          </div>
+          <button type="button" data-click="addToCart" class="btn btn-block btn-outline-warning">+ в корзину</button>
+        </div>
+      </div>
+    </div>`;
+  container.insertAdjacentHTML("beforeend", markup);
+}
 
-  const state = {
-    items: items,
-    cart: itemsFromCart,
-  };
+// Render a cart item in the cart container
+function renderCartItem(item, container) {
+  const markup = `
+    <div class="cart-item" data-productid="${item.id}">
+      <div class="cart-item__top">
+        <div class="cart-item__img">
+          <img src="img/roll/${item.img}" alt="${item.title}">
+        </div>
+        <div class="cart-item__desc">
+          <div class="cart-item__title">${item.title}</div>
+          <div class="cart-item__weight">${item.itemsInBox} шт. / ${item.weight}г.</div>
+          <div class="cart-item__details">
+            <div class="items items--small">
+              <div class="items__control" data-click="minus">-</div>
+              <div class="items__current" data-count>${item.items}</div>
+              <div class="items__control" data-click="plus">+</div>
+            </div>
+            <div class="price">
+              <div class="price__currency">${item.price} ₽</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  container.insertAdjacentHTML("beforeend", markup);
+}
 
-  if (state.cart == null) {
-    state.cart = [];
+// Update the counter for a product item
+function updateItemCounter(items, id, type) {
+  const item = items.find((element) => element.id == id);
+  if (!item) return;
+
+  if (type === "minus" && item.counter > 1) item.counter--;
+  if (type === "plus") item.counter++;
+}
+
+// Update the counter for a cart item
+function updateCartItemCounter(cart, id, type) {
+  const itemIndex = cart.findIndex((element) => element.id == id);
+  if (itemIndex === -1) return;
+
+  const item = cart[itemIndex];
+  if (type === "minus" && item.items > 1) {
+    item.items--;
+  } else if (type === "minus") {
+    cart.splice(itemIndex, 1);
+    checkCartEmptiness(cart, cartEmpty, cartTotal, makeOrder);
+  } else if (type === "plus") {
+    item.items++;
   }
+  localStorage.setItem("cart", JSON.stringify(cart));
+}
+
+// Update the view of a product item's counter
+function updateItemCounterView(container, id, count) {
+  const itemElement = container.querySelector(`[data-productid="${id}"]`);
+  if (itemElement) {
+    if (count > 0) {
+      itemElement.querySelector("[data-count]").innerText = count;
+    } else {
+      itemElement.classList.add("none");
+    }
+  }
+}
+
+// Check if the cart is empty and update the UI accordingly
+function checkCartEmptiness(cart, cartEmpty, cartTotal, makeOrder) {
+  const isEmpty = cart.length === 0;
+  cartEmpty.classList.toggle("none", !isEmpty);
+  cartTotal.classList.toggle("none", isEmpty);
+  makeOrder.classList.toggle("none", isEmpty);
+}
+
+// Add an item to the cart
+function addToCart(productsContainer, items, cart, id) {
+  const item = items.find((element) => element.id == id);
+  if (!item) return;
+
+  const itemInCart = cart.find((element) => element.id == id);
+  if (itemInCart) {
+    itemInCart.items += item.counter;
+  } else {
+    cart.push({ ...item, items: item.counter });
+  }
+
+  item.counter = 1;
+  updateItemCounterView(productsContainer, id, item.counter);
+  localStorage.setItem("cart", JSON.stringify(cart));
+}
+
+// Calculate the total sum of the cart
+function calculateTotalSum(cart, cartTotalPrice, deliveryPriceContainer) {
+  const totalSum = cart.reduce((sum, item) => sum + item.items * item.price, 0);
+  cartTotalPrice.innerText = new Intl.NumberFormat("ru-RU").format(totalSum);
+  calculateDelivery(totalSum, deliveryPriceContainer);
+}
+
+// Calculate delivery cost based on the total sum
+function calculateDelivery(totalSum, deliveryPriceContainer) {
+  if (totalSum >= DELIVERY_MINIMAL_FREE) {
+    deliveryPriceContainer.innerText = "бесплатно";
+    deliveryPriceContainer.classList.add("free");
+  } else {
+    deliveryPriceContainer.innerText = 300;
+    deliveryPriceContainer.classList.remove("free");
+  }
+}
+
+// Main function to initialize the application
+async function main() {
+  const state = {
+    items: await fetchItems(ITEMS_URL),
+    cart: getCartItems(),
+  };
 
   const productsContainer = document.querySelector("#productsMainContainer");
   const cartContainer = document.querySelector("#cartItemsHolder");
@@ -31,264 +164,56 @@ async function main() {
   const deliveryPriceContainer = document.querySelector(
     "#deliveryPriceContainer"
   );
-  const deliveryMinimalFree = 600;
 
-  const renderItem = function (item) {
-    const markup = `
-      <div class="col-md-6">
-        <div class="card mb-4" data-productid="${item.id}">
-          <img class="product-img" src="img/roll/${item.img}" alt="${item.title}">
-          <div class="card-body text-center">
-            <h4 class="item-title">${item.title}</h5>
-            <p><small class="text-muted">${item.itemsInBox} шт.</small></p>
-  
-            <div class="details-wrapper">
-              <div class="items">
-                <div class="items__control" data-click="minus">-</div>
-                <div class="items__current" data-count>${item.counter}</div>
-                <div class="items__control" data-click="plus">+</div>
-              </div>
-  
-              <div class="price">
-                <div class="price__weight">${item.weight}г.</div>
-                <div class="price__currency">${item.price} ₽</div>
-              </div>
-            </div>
-  
-            <button type="button" data-click="addToCart" class="btn btn-block btn-outline-warning">+ в корзину</button>
-            
-          </div>
-        </div>
-      </div>`;
+  // Render initial items
+  state.items.forEach((item) => renderProductItem(item, productsContainer));
+  state.cart.forEach((item) => renderCartItem(item, cartContainer));
 
-    productsContainer.insertAdjacentHTML("beforeend", markup);
-  };
-
-  const renderItemInCart = function (item) {
-    const markup = `
-      <div class="cart-item" data-productid="${item.id}">
-        <div class="cart-item__top">
-          <div class="cart-item__img">
-            <img src="img/roll/${item.img}" alt="${item.title}">
-          </div>
-          <div class="cart-item__desc">
-            <div class="cart-item__title">${item.title}</div>
-            <div class="cart-item__weight">${item.itemsInBox} шт. / ${item.weight}г.</div>
-            <div class="cart-item__details">
-              <div class="items items--small">
-                <div class="items__control" data-click="minus">-</div>
-                <div class="items__current" data-count>${item.items}</div>
-                <div class="items__control" data-click="plus">+</div>
-              </div>
-              <div class="price">
-                <div class="price__currency">${item.price} ₽</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-
-    cartContainer.insertAdjacentHTML("beforeend", markup);
-  };
-
-  state.items.forEach(renderItem);
-  state.cart.forEach(renderItemInCart);
-
-  const itemUpdateCounter = function (id, type) {
-    const itemIndex = state.items.findIndex(function (element) {
-      if (element.id == id) {
-        return true;
-      }
-    });
-
-    let count = state.items[itemIndex].counter;
-
-    if (type == "minus") {
-      if (count > 1) {
-        count--; // 4
-      }
-    }
-
-    if (type == "plus") {
-      count++; // 4
-    }
-
-    state.items[itemIndex].counter = count; // 4
-  };
-
-  const itemUpdateCounterInCart = function (id, type) {
-    const itemIndex = state.cart.findIndex(function (element) {
-      if (element.id == id) {
-        return true;
-      }
-    });
-
-    let count = state.cart[itemIndex].items; //
-
-    if (type == "minus") {
-      if (count > 1) {
-        count--; // 4
-      } else {
-        const itemIndex = state.cart.findIndex(function (element) {
-          if (element.id == id) {
-            return true;
-          }
-        });
-
-        cart.querySelector('[data-productid="' + id + '"').style.display =
-          "none";
-
-        state.cart.forEach(function (el, i) {
-          if (el.id == id) state.cart.splice(i, 1);
-        });
-
-        if (state.cart.length == 0) {
-          state.cart = [];
-        }
-        checkCartEmptiness();
-        calcTotalSum();
-        return true;
-      }
-    }
-
-    if (type == "plus") {
-      count++;
-    }
-
-    state.cart[itemIndex].items = count;
-  };
-
-  const itemUpdateViewCounter = function (id) {
-    const itemIndex = state.items.findIndex(function (element) {
-      if (element.id == id) {
-        return true;
-      }
-    });
-
-    productsContainer
-      .querySelector('[data-productid="' + id + '"')
-      .querySelector("[data-count]").innerText = state.items[itemIndex].counter;
-  };
-
-  const itemUpdateViewCounterInCart = function (id) {
-    const itemIndexInCart = state.cart.findIndex(function (element) {
-      if (element.id == id) {
-        return true;
-      }
-    });
-
-    if (itemIndexInCart != -1) {
-      cart
-        .querySelector('[data-productid="' + id + '"')
-        .querySelector("[data-count]").innerText =
-        state.cart[itemIndexInCart].items;
-    }
-
-    localStorage.setItem("cart", JSON.stringify(state.cart));
-  };
-
-  const checkCartEmptiness = function () {
-    if (state.cart.length > 0) {
-      cartEmpty.classList.add("none");
-      cartTotal.classList.remove("none");
-      makeOrder.classList.remove("none");
-    } else {
-      cartEmpty.classList.remove("none");
-      cartTotal.classList.add("none");
-      makeOrder.classList.add("none");
-    }
-  };
-
-  const addToCart = function (id) {
-    const itemIndex = state.items.findIndex(function (element) {
-      if (element.id == id) {
-        return true;
-      }
-    });
-
-    const itemInCartIndex = state.cart.findIndex(function (element) {
-      if (element.id == id) {
-        return true;
-      }
-    });
-
-    if (itemInCartIndex == -1) {
-      const itemToAdd = {
-        id: state.items[itemIndex].id,
-        title: state.items[itemIndex].title,
-        price: state.items[itemIndex].price,
-        weight: state.items[itemIndex].weight,
-        itemsInBox: state.items[itemIndex].itemsInBox,
-        img: state.items[itemIndex].img,
-        items: state.items[itemIndex].counter,
-      };
-
-      state.cart.push(itemToAdd);
-    } else {
-      state.cart[itemInCartIndex].items += state.items[itemIndex].counter;
-    }
-
-    state.items[itemIndex].counter = 1;
-    state.items[itemIndex].itemsInBox--;
-    itemUpdateViewCounter(id);
-
-    cartContainer.innerHTML = "";
-    state.cart.forEach(renderItemInCart);
-
-    localStorage.setItem("cart", JSON.stringify(state.cart));
-
-    checkCartEmptiness();
-    calcTotalSum();
-  };
-
-  productsContainer.addEventListener("click", function (e) {
+  // Event listeners
+  productsContainer.addEventListener("click", (e) => {
     const id = e.target.closest("[data-productid]").dataset.productid;
-
     if (e.target.matches('[data-click="minus"]')) {
-      itemUpdateCounter(id, "minus", "state");
-      itemUpdateViewCounter(id);
+      updateItemCounter(state.items, id, "minus");
+      updateItemCounterView(
+        productsContainer,
+        id,
+        state.items.find((item) => item.id == id).counter
+      );
     } else if (e.target.matches('[data-click="plus"]')) {
-      itemUpdateCounter(id, "plus", "state");
-      itemUpdateViewCounter(id);
+      updateItemCounter(state.items, id, "plus");
+      updateItemCounterView(
+        productsContainer,
+        id,
+        state.items.find((item) => item.id == id).counter
+      );
     } else if (e.target.matches('[data-click="addToCart"]')) {
-      addToCart(id);
+      addToCart(productsContainer, state.items, state.cart, id);
+      cartContainer.innerHTML = "";
+      state.cart.forEach((item) => renderCartItem(item, cartContainer));
+      checkCartEmptiness(state.cart, cartEmpty, cartTotal, makeOrder);
+      calculateTotalSum(state.cart, cartTotalPrice, deliveryPriceContainer);
     }
   });
 
-  cart.addEventListener("click", function (e) {
+  cart.addEventListener("click", (e) => {
     const id = e.target.closest("[data-productid]").dataset.productid;
-
-    if (e.target.matches('[data-click="minus"]')) {
-      itemUpdateCounterInCart(id, "minus");
-    } else if (e.target.matches('[data-click="plus"]')) {
-      itemUpdateCounterInCart(id, "plus");
+    if (
+      e.target.matches('[data-click="minus"]') ||
+      e.target.matches('[data-click="plus"]')
+    ) {
+      updateCartItemCounter(state.cart, id, e.target.dataset.click);
+      updateItemCounterView(
+        cartContainer,
+        id,
+        state.cart.find((item) => item.id == id)?.items || 0
+      );
+      calculateTotalSum(state.cart, cartTotalPrice, deliveryPriceContainer);
     }
-
-    itemUpdateViewCounterInCart(id);
-    calcTotalSum();
   });
 
-  const calcTotalSum = function () {
-    let totalSum = 0;
-    state.cart.forEach(function (element) {
-      const currentSum = element.items * element.price;
-      totalSum += currentSum;
-    });
-
-    state.totalSum = totalSum;
-    cartTotalPrice.innerText = new Intl.NumberFormat("ru-RU").format(totalSum);
-    calcDelivery();
-  };
-
-  const calcDelivery = function () {
-    if (state.totalSum >= deliveryMinimalFree) {
-      deliveryPriceContainer.innerText = "бесплатно";
-      deliveryPriceContainer.classList.add("free");
-    } else {
-      deliveryPriceContainer.innerText = 300;
-      deliveryPriceContainer.classList.remove("free");
-    }
-  };
+  // Initial checks
+  checkCartEmptiness(state.cart, cartEmpty, cartTotal, makeOrder);
+  calculateTotalSum(state.cart, cartTotalPrice, deliveryPriceContainer);
 }
 
 main();

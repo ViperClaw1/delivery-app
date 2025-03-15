@@ -1,4 +1,4 @@
-const ITEMS_URL = "http://localhost:3000/json/db.json";
+const ITEMS_URL = "./json/db.json";
 const DELIVERY_MINIMAL_FREE = 600;
 
 // Fetch items from the server
